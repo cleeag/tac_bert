@@ -43,26 +43,32 @@ BBN_FILES = {
 
 
 max_seq_length = 128
-batch_size = 46
 # eval_batch_size = 50
 dropout = 0.5
 
-context_lstm_hidden_dim = 150
+lstm_hidden_dim = 150
 type_embed_dim = 500
 pred_mlp_hdim = 400
 mlp_hidden_dim = 400
-att_mlp_hdim = 400
 bert_hdim = 768
-bert_use_four = True
 
 n_iter = 15
-learning_rate = 3e-5
-lr_gamma = 0.9
+
+bert_adam_warmup = 0.4
+lr_gamma = 0.7
 nil_rate = 0.5
 use_mlp = True
 rand_per = True
-use_bert = True
 per_penalty = 2.0
 
-
+use_gpu = 1
+use_bert = 0
+bert_use_four = True
+use_lstm = 1
+concat_lstm = False
+# test = True
 test = False
+
+batch_size = 46 if use_bert else 256
+# learning_rate = 0.001
+learning_rate = 3e-5 if use_bert else 0.001

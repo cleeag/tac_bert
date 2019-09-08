@@ -22,6 +22,25 @@ def build_hierarchy_vecs(type_vocab, type_to_id_dict):
     l1_type_indices = np.array(l1_type_indices, np.int32)
     return l1_type_indices, l1_type_vec, child_type_vecs
 
+def get_len_sorted_context_seqs_input(device, context_token_list, mention_token_idxs):
+    data_tups = list(enumerate(zip(context_token_list, mention_token_idxs)))
+    data_tups.sort(key=lambda x: -len(x[1][0]))
+    sorted_seqs = [x[1][0] for x in data_tups]
+    mention_token_idxs = [x[1][1] for x in data_tups]
+    idxs = [x[0] for x in data_tups]
+    back_idxs = [0] * len(idxs)
+    for i, idx in enumerate(idxs):
+        back_idxs[idx] = i
+
+    back_idxs = torch.tensor(back_idxs, dtype=torch.long, device=device)
+    # seqs, seq_lens = get_seqs_torch_input(device, seqs)
+    seq_lens = torch.tensor([len(seq) for seq in sorted_seqs], dtype=torch.long, device=device)
+    sorted_seqs_tensor_list = [torch.tensor(seq, dtype=torch.long, device=device) for seq in sorted_seqs]
+    padded_sorted_seqs_tensor = torch.nn.utils.rnn.pad_sequence(sorted_seqs_tensor_list, batch_first=True)
+    mention_token_idxs = torch.tensor(mention_token_idxs, dtype=torch.long, device=device)
+    return padded_sorted_seqs_tensor, seq_lens, mention_token_idxs, back_idxs
+
+
 def get_avg_token_vecs(device, embedding_layer: nn.Embedding, token_seqs):
     lens = torch.tensor([len(seq) for seq in token_seqs], dtype=torch.float32, device=device
                         ).view(-1, 1)

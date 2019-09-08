@@ -8,11 +8,12 @@ get type count, filter out types with the more mentions.
 get men-type dict, and type sets. iterate through type set, count mention times, get type-mention time dict
 
 1. pageID2type.pkl
-    - pageID to types, dictionary
-    - e.g. 49860890 : \['! (album)', 'Object100002684;Medium106254669;Album106591815;Whole100003553;Artifact100021939;PhysicalEntity100001930;Instrumentality103575240\n']
+    - pageID to types(str), dictionary
+    - e.g. 49860890 : 'Object100002684;Medium106254669;Album106591815;Whole100003553;Artifact100021939;PhysicalEntity100001930;Instrumentality103575240\n'
 
 2. mention2type_dict.pkl
-    - mention string to \[title, types], dictionary
-    - e.g. self-governed : \['Federacy', 'SocialGroup107950920;Abstraction100002137;Group100031264;PoliticalSystem108367880\n']
+    - mention string to types(str), dictionary
+    - e.g. self-governed : 'SocialGroup107950920;Abstraction100002137;Group100031264;PoliticalSystem108367880\n'
 
-3. type_count_dict.pkl
+3. type_count_dict.pkl and txt
+    - count of each type, txt sorted

@@ -8,22 +8,29 @@ import random
 
 import torch
 
-from utils import exp_utils, datautils, model_utils
+from utils import exp_utils, datautils, model_utils, utils
 from models.fet import fet_model
 import config
 
 
 def train_model(test=False):
-    device = torch.device('cuda:0') if torch.cuda.device_count() > 0 else torch.device('cpu')
-    # device = torch.device('cpu')
-    device_name = torch.cuda.get_device_name(device) if device is not 'cpu' else 'cpu'
+    if config.use_gpu:
+        device = torch.device('cuda:0') if torch.cuda.device_count() > 0 else torch.device('cpu')
+        device_name = torch.cuda.get_device_name(device)
+    else:
+        device = torch.device('cpu')
+        device_name = 'cpu'
+
     logging.info(f'running on device: {device_name}')
     dataset = 'figer'
     datafiles = config.FIGER_FILES
     word_vecs_file = config.WIKI_FETEL_WORDVEC_FILE
     save_model_file = config.DATA_DIR + 'models' + 'test'
 
-    data_prefix = datafiles['anchor-train-data-prefix-bert']
+    if config.use_bert:
+        data_prefix = datafiles['anchor-train-data-prefix-bert']
+    else:
+        data_prefix = datafiles['anchor-train-data-prefix']
     # dev_data_pkl = data_prefix + '-dev.pkl'
     # train_data_pkl = data_prefix + '-train.pkl'
     dev_data_pkl = data_prefix + '-dev-slim.pkl'
@@ -36,10 +43,10 @@ def train_model(test=False):
     gres = exp_utils.GlobalRes(datafiles['type-vocab'], word_vecs_file)
     logging.info('dataset={}'.format(dataset))
 
+    logging.info('use_bert = {}, use_lstm = {}'.format(config.use_bert, config.use_lstm))
     logging.info(
-        'type_embed_dim={} cxt_lstm_hidden_dim={} pmlp_hdim={} amlp_hdim={}'.format(
-            config.type_embed_dim, config.context_lstm_hidden_dim, config.pred_mlp_hdim,
-            config.att_mlp_hdim))
+        'type_embed_dim={} cxt_lstm_hidden_dim={} pmlp_hdim={}'.format(
+            config.type_embed_dim, config.lstm_hidden_dim, config.pred_mlp_hdim))
     logging.info('rand_per={} per_pen={}'.format(config.rand_per, config.per_penalty))
 
     print('loading training data {} ...'.format(train_data_pkl), end=' ', flush=True)
@@ -50,8 +57,9 @@ def train_model(test=False):
     print('loading dev data {} ...'.format(dev_data_pkl), end=' ', flush=True)
     dev_samples = datautils.load_pickle_data(dev_data_pkl)
     print('done', flush=True)
-    # dev_samples = exp_utils.anchor_samples_to_model_samples_bert(config, dev_data, gres.parent_type_ids_dict)
-    dev_true_labels_dict = {s[0]: [gres.type_vocab[l] for l in s[4]] for s in dev_samples}
+    dev_true_labels_dict = {s[0]: [gres.type_vocab[l] for l in
+                                   utils.get_full_type_ids(s[4], gres.parent_type_ids_dict)
+                                   ] for s in dev_samples}
 
     logging.info('building model...')
     model = fet_model(config, device, gres.type_vocab, gres.type_id_dict, gres.embedding_layer)
@@ -73,14 +81,27 @@ def train_model(test=False):
 
     n_batches = (len(training_samples) + config.batch_size - 1) // config.batch_size
     n_steps = config.n_iter * n_batches
-    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+    if config.use_lstm:
+        optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+    elif config.use_bert:
+        from pytorch_pretrained_bert.optimization import BertAdam
+        param_optimizer = list(model.named_parameters())
+        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        optimizer_grouped_parameters = [
+            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+            {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        ]
+        optimizer = BertAdam(optimizer_grouped_parameters,
+                             lr=config.learning_rate,
+                             warmup=config.bert_adam_warmup,
+                             t_total=n_steps)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=n_batches, gamma=config.lr_gamma)
     losses = list()
     best_dev_acc = -1
 
     # start training
-    logging.info('{} steps, {} steps per iter, lr_decay={}, start training ...'.format(
-        config.n_iter * n_batches, n_batches, config.lr_gamma))
+    logging.info('{} steps, {} steps per iter, learning rate={}, lr_decay={}, start training ...'.format(
+        config.n_iter * n_batches, n_batches, config.learning_rate, config.lr_gamma))
     step = 0
     while True:
         if step == n_steps:
@@ -89,12 +110,12 @@ def train_model(test=False):
         batch_idx = step % n_batches
         batch_beg, batch_end = batch_idx * config.batch_size, min((batch_idx + 1) * config.batch_size,
                                                                   len(training_samples))
-        context_token_seqs, mention_token_idxs, mstr_token_seqs, type_vecs \
+        context_token_list, mention_token_idxs, mstr_token_seqs, type_vecs \
             = exp_utils.samples_to_tensor(
             config, device, gres, training_samples[batch_beg:batch_end],
             person_type_id, l2_person_type_ids)
         model.train()
-        logits = model(context_token_seqs, mention_token_idxs, mstr_token_seqs)
+        logits = model(context_token_list, mention_token_idxs, mstr_token_seqs)
         loss = model.get_loss(type_vecs, logits, person_loss_vec=person_loss_vec)
         scheduler.step()
         optimizer.zero_grad()
@@ -104,21 +125,22 @@ def train_model(test=False):
         torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0, float('inf'))
         optimizer.step()
         losses.append(loss.data.cpu().numpy())
-        logging.info('step={}/{} accumulated loss = {:.4f}, loss = {:.4f}'.format(step, n_steps, sum(losses), loss))
+        # logging.info('step={}/{} accumulated loss = {:.4f}, loss = {:.4f}'.format(step, n_steps, sum(losses), loss))
 
         step += 1
 
-        eval_cycle = 3 if config.test else 100
+        eval_cycle = 1 if config.test else 100
         if step % eval_cycle == 0:
-            l_v, acc_v, pacc_v,  maf1, mif1, dev_results = \
+            l_v, acc_v, pacc_v, maf1, mif1, dev_results = \
                 model_utils.eval_fetel(config, gres, model, dev_samples, dev_true_labels_dict)
             best_tag = '*' if acc_v > best_dev_acc else ''
             # logging.info(
             #     'step={}/{} l={:.4f} l_v={:.4f} acc_v={:.4f} paccv={:.4f}{}\n'.format(
             #         step, n_steps, loss, l_v, acc_v, pacc_v, best_tag))
-            print('   evaluation result: ')
-            print('     l_v={:.4f} acc_v={:.4f} paccv={:.4f} macro_f1={:.4f} micro_f1={:.4f}{}\n'.format(
-                    l_v, acc_v, pacc_v, maf1, mif1, best_tag))
+            logging.info('step={}/{}'.format(step, n_steps))
+            logging.info('evaluation result: '
+                         'l_v={:.4f} acc_v={:.4f} paccv={:.4f} macro_f1={:.4f} micro_f1={:.4f}{}\n'
+                         .format(l_v, acc_v, pacc_v, maf1, mif1, best_tag))
             if acc_v > best_dev_acc and save_model_file:
                 # torch.save(model.state_dict(), save_model_file)
                 logging.info('model saved to {}'.format(save_model_file))
@@ -129,21 +151,18 @@ def train_model(test=False):
 
             if acc_v > best_dev_acc:
                 best_dev_acc = acc_v
-        # losses = list()
-            if config.test:
-                input('proceed? ')
-
+            # losses = list()
+            # if config.test:
+            #     input('proceed? ')
 
         pass
-
-
 
 
 if __name__ == '__main__':
     torch.random.manual_seed(config.RANDOM_SEED)
     np.random.seed(config.NP_RANDOM_SEED)
     random.seed(config.PY_RANDOM_SEED)
-    str_today = datetime.date.today().strftime('%d-%m-%Y')
+    str_today = datetime.datetime.now().strftime('%m_%d_%H%M')
     log_file = os.path.join(config.LOG_DIR, '{}-{}-{}.log'.format(os.path.splitext(
         os.path.basename(__file__))[0], str_today, config.MACHINE_NAME))
     init_universal_logging(log_file, mode='a', to_stdout=True)

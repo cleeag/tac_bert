@@ -104,13 +104,27 @@ def samples_to_tensor(config, device, gres, samples, person_type_id=None, l2_per
     """
     mstr_token_seqs = [s[1] for s in samples]
 
-    context_token_tensor = torch.zeros(len(samples), config.max_seq_length, device=device, dtype=torch.long)
-    context_token_list = [torch.tensor(s[2][:config.max_seq_length]) for s in samples]
-    context_token_list = torch.nn.utils.rnn.pad_sequence(context_token_list, batch_first=True, padding_value=0)
-    context_token_tensor[:, :min(context_token_list.size(1), config.max_seq_length)] = context_token_list
+    # context_token_tensor = torch.zeros(len(samples), config.max_seq_length, device=device, dtype=torch.long)
+    # context_token_list = [torch.tensor(s[2][:config.max_seq_length]) for s in samples]
+    context_token_list = []
 
-    mention_token_idx_tensor = torch.tensor([s[3] if s[3] < config.max_seq_length else config.max_seq_length - 1
-                                             for s in samples], device=device, dtype=torch.long)
+    for s in samples:
+        sent_tokens = s[2]
+        if config.use_lstm:
+            context_token_seq = sent_tokens[:s[3]] + [gres.mention_token_id] + sent_tokens[s[3] + len(s[1]):]
+        elif config.use_bert:
+            context_token_seq = sent_tokens
+        else:
+            context_token_seq = None
+
+        context_token_list.append(torch.tensor(context_token_seq))
+    # context_token_list = torch.nn.utils.rnn.pad_sequence(context_token_list, batch_first=True, padding_value=0)
+    # context_token_tensor[:, :min(context_token_list.size(1), config.max_seq_length)] = context_token_list
+
+    mention_token_idx_tensor = torch.tensor([s[3] if s[3] < config.max_seq_length
+                                             else config.max_seq_length - 1
+                                             for s in samples]
+                                            , device=device, dtype=torch.long)
 
     if not rand:
         type_vecs = torch.tensor([
@@ -131,7 +145,7 @@ def samples_to_tensor(config, device, gres, samples, person_type_id=None, l2_per
             type_vecs.append(type_vec)
         type_vecs = torch.tensor(type_vecs, dtype=torch.float32, device=device)
 
-    return context_token_tensor, mention_token_idx_tensor, mstr_token_seqs, type_vecs
+    return context_token_list, mention_token_idx_tensor, mstr_token_seqs, type_vecs
 
 
 def get_mstr_context_batch_input_rand_per_bert(device, n_types, samples, person_type_id=None,
