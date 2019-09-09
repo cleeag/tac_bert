@@ -46,26 +46,28 @@ max_seq_length = 128
 # eval_batch_size = 50
 dropout = 0.5
 
+# dimensions
 lstm_hidden_dim = 150
 type_embed_dim = 500
 pred_mlp_hdim = 400
 mlp_hidden_dim = 400
 bert_hdim = 768
 
+# training parameters
 n_iter = 15
-
 bert_adam_warmup = 0.4
 lr_gamma = 0.7
 nil_rate = 0.5
-use_mlp = True
 rand_per = True
 per_penalty = 2.0
 
+# model structure
 use_gpu = 1
-use_bert = 0
+use_bert = 1
 bert_use_four = True
-use_lstm = 1
+use_lstm = 0
 concat_lstm = False
+use_mlp = 0
 # test = True
 test = False
 

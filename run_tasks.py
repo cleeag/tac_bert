@@ -28,5 +28,23 @@ if __name__ == "__main__":
         samples = datautils.load_pickle_data(train_data_pkl)
         print(samples[0])
 
+    elif task == 'ib':
+        from collections import defaultdict
+
+        train_data_pkl = "/data/cleeag/fetel/Wiki/enwiki20151002anchor-fetwiki-0_1-train-slim.pkl"
+        samples = datautils.load_pickle_data(train_data_pkl)
+        seq_len_dict = defaultdict(int)
+        for s in tqdm(samples):
+            seq_len_dict[len(s[2])] += 1
+        seq_len_ls = [(k, v) for k, v in seq_len_dict.items()]
+        seq_len_ls.sort(key=lambda x:x[0], reverse=True)
+        long_count, total_count = 0, 0
+        for x in seq_len_ls:
+            if x[0] > 128:
+                long_count += x[1]
+            total_count += x[1]
+            print(x)
+        print(long_count, total_count, long_count/total_count)
+
     else:
         print('None!')

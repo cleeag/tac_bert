@@ -43,7 +43,8 @@ def train_model(test=False):
     gres = exp_utils.GlobalRes(datafiles['type-vocab'], word_vecs_file)
     logging.info('dataset={}'.format(dataset))
 
-    logging.info('use_bert = {}, use_lstm = {}'.format(config.use_bert, config.use_lstm))
+    logging.info('use_bert = {}, use_lstm = {}, use_mlp={}'
+                 .format(config.use_bert, config.use_lstm, config.use_mlp))
     logging.info(
         'type_embed_dim={} cxt_lstm_hidden_dim={} pmlp_hdim={}'.format(
             config.type_embed_dim, config.lstm_hidden_dim, config.pred_mlp_hdim))
@@ -84,17 +85,20 @@ def train_model(test=False):
     if config.use_lstm:
         optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
     elif config.use_bert:
-        from pytorch_pretrained_bert.optimization import BertAdam
-        param_optimizer = list(model.named_parameters())
-        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-        optimizer_grouped_parameters = [
-            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
-            {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        ]
-        optimizer = BertAdam(optimizer_grouped_parameters,
-                             lr=config.learning_rate,
-                             warmup=config.bert_adam_warmup,
-                             t_total=n_steps)
+        # from pytorch_pretrained_bert.optimization import BertAdam
+        # param_optimizer = list(model.named_parameters())
+        # no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        # optimizer_grouped_parameters = [
+        #     {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+        #     {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        # ]
+        # optimizer = BertAdam(optimizer_grouped_parameters,
+        #                      lr=config.learning_rate,
+        #                      warmup=config.bert_adam_warmup,
+        #                      t_total=n_steps)
+        optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+
+
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=n_batches, gamma=config.lr_gamma)
     losses = list()
     best_dev_acc = -1
@@ -121,8 +125,8 @@ def train_model(test=False):
         optimizer.zero_grad()
 
         loss.backward()
-
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0, float('inf'))
+        if config.use_lstm:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0, float('inf'))
         optimizer.step()
         losses.append(loss.data.cpu().numpy())
         # logging.info('step={}/{} accumulated loss = {:.4f}, loss = {:.4f}'.format(step, n_steps, sum(losses), loss))
@@ -163,8 +167,9 @@ if __name__ == '__main__':
     np.random.seed(config.NP_RANDOM_SEED)
     random.seed(config.PY_RANDOM_SEED)
     str_today = datetime.datetime.now().strftime('%m_%d_%H%M')
-    log_file = os.path.join(config.LOG_DIR, '{}-{}-{}.log'.format(os.path.splitext(
-        os.path.basename(__file__))[0], str_today, config.MACHINE_NAME))
+    model_used = 'use_bert' if config.use_bert else 'use_lstm'
+    log_file = os.path.join(config.LOG_DIR, '{}-{}_{}.log'.format(os.path.splitext(
+        os.path.basename(__file__))[0], str_today, model_used))
     init_universal_logging(log_file, mode='a', to_stdout=True)
 
     train_model(config.test)
