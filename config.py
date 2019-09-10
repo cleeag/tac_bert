@@ -55,7 +55,7 @@ bert_hdim = 768
 
 # training parameters
 n_iter = 15
-bert_adam_warmup = 0.4
+bert_adam_warmup = 0.001
 lr_gamma = 0.7
 nil_rate = 0.5
 rand_per = True

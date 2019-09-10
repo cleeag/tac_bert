@@ -29,21 +29,21 @@ def slim_pickles():
         to retrieve context representation
     4: labels, list of int : not full label, needs to call utils.get_full_types() to obtain full label
     """
-    # job = 'train'
-    job = 'dev'
-    # data_pkl = f"/data/cleeag/fetel/Wiki/enwiki20151002anchor-fetwiki-0_1-bert-{job}.pkl"
-    data_pkl = f"/data/cleeag/fetel/Wiki/enwiki20151002anchor-fetwiki-0_1-{job}.pkl"
+    job = 'train'
+    # job = 'dev'
+    data_pkl = f"/data/cleeag/fetel/Wiki/enwiki20151002anchor-fetwiki-0_1-bert-{job}.pkl"
+    # data_pkl = f"/data/cleeag/fetel/Wiki/enwiki20151002anchor-fetwiki-0_1-{job}.pkl"
     print('loading training data {} ...'.format(data_pkl), end=' ', flush=True)
     samples = datautils.load_pickle_data(data_pkl)
     print('done', flush=True)
     out_list = []
     for sample in tqdm(samples):
-        # new_s = [sample[0], sample[6][sample[2]:sample[3]], sample[7], sample[8], sample[5]]
-        new_s = (sample[0], sample[6][sample[2]:sample[3]], sample[6], sample[2], sample[5])
+        new_s = [sample[0], sample[6][sample[2]:sample[3]], sample[7], sample[8], sample[5]]
+        # new_s = (sample[0], sample[6][sample[2]:sample[3]], sample[6], sample[2], sample[5])
         out_list.append(new_s)
 
-    # output_file = f"/data/cleeag/fetel/Wiki/enwiki20151002anchor-fetwiki-0_1-bert-{job}-slim.pkl"
-    output_file = f"/data/cleeag/fetel/Wiki/enwiki20151002anchor-fetwiki-0_1-{job}-slim.pkl"
+    output_file = f"/data/cleeag/fetel/Wiki/enwiki20151002anchor-fetwiki-0_1-bert-{job}-slim.pkl"
+    # output_file = f"/data/cleeag/fetel/Wiki/enwiki20151002anchor-fetwiki-0_1-{job}-slim.pkl"
     pkl.dump(out_list, file=open(output_file, 'wb'))
 
 
@@ -98,9 +98,6 @@ def gen_training_data_from_wiki(typed_mentions_file, sents_file, word_vecs_pkl, 
             sent_tokens = sent_tokens[:pos_beg] + ['[MASK]'] + sent_tokens[pos_end:]
             full_sent = ' '.join(sent_tokens)
             tokens = ["[CLS]"]
-            # for word in sent_tokens:
-            #     t = tokenizer.tokenize(word)
-            #     tokens.extend(t)
             t = tokenizer.tokenize(full_sent)
             tokens.extend(t)
             mention_token_idx_bert = 0
@@ -264,10 +261,12 @@ if __name__ == '__main__':
     # get_type_count(test=test)
     # check_yago_types_of_at_least_10()
     # sys.path.append(home_path)
-    gen_training_data_from_wiki(typed_mentions_file=config.FIGER_FILES['typed-wiki-mentions'],
-                                sents_file=config.WIKI_ANCHOR_SENTS_FILE,
-                                word_vecs_pkl=config.WIKI_FETEL_WORDVEC_FILE,
-                                sample_rate=0.1,
-                                n_dev_samples=2000,
-                                output_files_name_prefix=config.FIGER_FILES['anchor-train-data-prefix-bert'],
-                                do_bert=True)
+    # gen_training_data_from_wiki(typed_mentions_file=config.FIGER_FILES['typed-wiki-mentions'],
+    #                             sents_file=config.WIKI_ANCHOR_SENTS_FILE,
+    #                             word_vecs_pkl=config.WIKI_FETEL_WORDVEC_FILE,
+    #                             sample_rate=0.1,
+    #                             n_dev_samples=2000,
+    #                             output_files_name_prefix=config.FIGER_FILES['anchor-train-data-prefix-bert'],
+    #                             do_bert=True)
+
+    slim_pickles()

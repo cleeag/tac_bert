@@ -4,6 +4,9 @@ from tqdm import tqdm
 import logging
 from collections import namedtuple
 import random
+import json
+
+from pytorch_transformers.tokenization_bert import BertTokenizer
 
 import config
 from utils import utils, datautils
@@ -50,44 +53,53 @@ class GlobalRes:
         self.embedding_layer.share_memory()
 
 
-def anchor_samples_to_model_samples_bert(config, samples, parent_type_ids_dict):
-    model_samples = list()
-    skip_count = 0
-    for i, sample in enumerate(tqdm(samples)):
-        if sample[8] >= config.max_seq_length:
-            skip_count += 1
-            continue
-        mention_id = sample[0]
-        # mention_str = sample[1]
-        pos_beg, pos_end = sample[2], sample[3]
-        mstr_token_seq = sample[6][pos_beg:pos_end]
-        # mention_token_idx = pos_beg
-        # context_token_seq = sample[6][:pos_beg] + [mention_token_id] + sample[6][pos_end:]
-        context_token_seq_bert = sample[7]
-        while len(context_token_seq_bert) < config.max_seq_length:
-            context_token_seq_bert.append(0)
-        mention_token_idx_bert = sample[8]
+def model_samples_from_json(config, token_id_dict, unknown_token_id, type_id_dict,
+                            mentions_file, sents_file):
 
-        # if len(context_token_seq) > 256:
-        #     context_token_seq = context_token_seq[:256]
-        # if mention_token_idx >= 256:
-        #     mention_token_idx = 255
+    if config.use_bert:
+        tokenizer = BertTokenizer.from_pretrained('bert-base-cased', do_lower_case=False)
+        print('bert tokenizer loaded')
+    sent_tokens_id_dict = dict()
+    sent_tokens_dict = dict()
+    with open(sents_file, encoding='utf-8') as f:
+        for line in f:
+            sent = json.loads(line)
+            tokens = sent['text'].split(' ')
+            sent_tokens_id_dict[sent['sent_id']] = [token_id_dict.get(t, unknown_token_id) for t in tokens]
+            sent_tokens_dict[sent['sent_id']] = [t for t in tokens]
 
-        full_labels = utils.get_full_type_ids(sample[5], parent_type_ids_dict)
+    samples = list()
+    mentions = datautils.read_json_objs(mentions_file)
+    for m in mentions:
+        if config.use_bert:
+            org_tok_sents = sent_tokens_dict[m['sent_id']]
+            bert_sent_tokens = org_tok_sents[:m['span'][0]] + ['[MASK]'] + org_tok_sents[m['span'][1]:]
+            full_sent = ' '.join(bert_sent_tokens)
+            tokens = ["[CLS]"]
+            t = tokenizer.tokenize(full_sent)
+            tokens.extend(t)
+            mention_token_idx = 0
+            for i, x in enumerate(tokens):
+                if x == '[MASK]':
+                    mention_token_idx = i
+                    break
+            tokens.append("[SEP]")
+            sentence_token = tokenizer.convert_tokens_to_ids(tokens)
 
-        model_samples.append(ModelSample(mention_id,
-                                         mstr_token_seq,
-                                         context_token_seq_bert,
-                                         mention_token_idx_bert,
-                                         full_labels))
-        # model_samples.append([mention_id,
-        #                       mstr_token_seq,
-        #                       context_token_seq_bert,
-        #                       mention_token_idx_bert,
-        #                       full_labels])
-    # logging.info(f'skipped {skip_count} entries')
-    return model_samples
+        else:
+            sentence_token = sent_tokens_id_dict[m['sent_id']]
+            mention_token_idx = m['span'][0]
 
+        labels = m['labels']
+        label_ids = [type_id_dict[t] for t in labels]
+        sample = [m['mention_id'],
+                  sent_tokens_id_dict[m['sent_id']][m['span'][0]:m['span'][1]],
+                  sentence_token,
+                  mention_token_idx,
+                  label_ids
+                  ]
+        samples.append(sample)
+    return samples
 
 def samples_to_tensor(config, device, gres, samples, person_type_id=None, l2_person_type_ids=None, rand=True):
     """

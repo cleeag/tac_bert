@@ -38,7 +38,7 @@ def train_model(test=False):
         train_data_pkl = data_prefix + '-dev-slim.pkl'
     else:
         train_data_pkl = data_prefix + '-train-slim.pkl'
-    dev_results_file = os.path.join(config.DATA_DIR, 'Wiki/fetel-deep-results-{}.txt'.format(dataset))
+    test_results_file = os.path.join(config.DATA_DIR, 'Wiki/fetel-deep-results-{}.txt'.format(dataset))
 
     gres = exp_utils.GlobalRes(datafiles['type-vocab'], word_vecs_file)
     logging.info('dataset={}'.format(dataset))
@@ -61,6 +61,14 @@ def train_model(test=False):
     dev_true_labels_dict = {s[0]: [gres.type_vocab[l] for l in
                                    utils.get_full_type_ids(s[4], gres.parent_type_ids_dict)
                                    ] for s in dev_samples}
+
+    test_samples = exp_utils.model_samples_from_json(config,
+                                                     gres.token_id_dict,
+                                                     gres.unknown_token_id,
+                                                     gres.type_id_dict,
+                                                     datafiles['fetel-test-mentions'],
+                                                     datafiles['fetel-test-sents'])
+    test_true_labels_dict = {s[0]: [gres.type_vocab[l] for l in s[4]] for s in test_samples}
 
     logging.info('building model...')
     model = fet_model(config, device, gres.type_vocab, gres.type_id_dict, gres.embedding_layer)
@@ -85,19 +93,18 @@ def train_model(test=False):
     if config.use_lstm:
         optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
     elif config.use_bert:
-        # from pytorch_pretrained_bert.optimization import BertAdam
-        # param_optimizer = list(model.named_parameters())
-        # no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
-        # optimizer_grouped_parameters = [
-        #     {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
-        #     {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
-        # ]
-        # optimizer = BertAdam(optimizer_grouped_parameters,
-        #                      lr=config.learning_rate,
-        #                      warmup=config.bert_adam_warmup,
-        #                      t_total=n_steps)
-        optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
-
+        from pytorch_pretrained_bert.optimization import BertAdam
+        param_optimizer = list(model.named_parameters())
+        no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
+        optimizer_grouped_parameters = [
+            {'params': [p for n, p in param_optimizer if not any(nd in n for nd in no_decay)], 'weight_decay': 0.01},
+            {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+        ]
+        optimizer = BertAdam(optimizer_grouped_parameters,
+                             lr=config.learning_rate,
+                             warmup=config.bert_adam_warmup,
+                             t_total=n_steps)
+        # optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=n_batches, gamma=config.lr_gamma)
     losses = list()
@@ -135,23 +142,27 @@ def train_model(test=False):
 
         eval_cycle = 1 if config.test else 100
         if step % eval_cycle == 0:
-            l_v, acc_v, pacc_v, maf1, mif1, dev_results = \
+            l_v, acc_v, pacc_v, _, _, dev_results = \
                 model_utils.eval_fetel(config, gres, model, dev_samples, dev_true_labels_dict)
+
+            _, acc_t, pacc_t, maf1, mif1, test_results = \
+                model_utils.eval_fetel(config, gres, model, test_samples, test_true_labels_dict)
+
             best_tag = '*' if acc_v > best_dev_acc else ''
             # logging.info(
             #     'step={}/{} l={:.4f} l_v={:.4f} acc_v={:.4f} paccv={:.4f}{}\n'.format(
             #         step, n_steps, loss, l_v, acc_v, pacc_v, best_tag))
-            logging.info('step={}/{}'.format(step, n_steps))
+            logging.info('step={}/{}, learning rate={}'.format(step, n_steps, optimizer.param_groups[0]['lr']))
             logging.info('evaluation result: '
-                         'l_v={:.4f} acc_v={:.4f} paccv={:.4f} macro_f1={:.4f} micro_f1={:.4f}{}\n'
-                         .format(l_v, acc_v, pacc_v, maf1, mif1, best_tag))
+                         'l_v={:.4f} acc_v={:.4f} paccv={:.4f} acc_t={:.4f} macro_f1={:.4f} micro_f1={:.4f}{}\n'
+                         .format(l_v, acc_v, pacc_v, acc_t, maf1, mif1, best_tag))
             if acc_v > best_dev_acc and save_model_file:
                 # torch.save(model.state_dict(), save_model_file)
                 logging.info('model saved to {}'.format(save_model_file))
 
-            if dev_results_file is not None and acc_v > best_dev_acc:
-                # datautils.save_json_objs(dev_results, dev_results_file)
-                logging.info('dev reuslts saved {}'.format(dev_results_file))
+            if test_results_file is not None and acc_v > best_dev_acc:
+                datautils.save_json_objs(dev_results, test_results_file)
+                logging.info('dev reuslts saved {}'.format(test_results_file))
 
             if acc_v > best_dev_acc:
                 best_dev_acc = acc_v
@@ -168,8 +179,12 @@ if __name__ == '__main__':
     random.seed(config.PY_RANDOM_SEED)
     str_today = datetime.datetime.now().strftime('%m_%d_%H%M')
     model_used = 'use_bert' if config.use_bert else 'use_lstm'
-    log_file = os.path.join(config.LOG_DIR, '{}-{}_{}.log'.format(os.path.splitext(
-        os.path.basename(__file__))[0], str_today, model_used))
+    if not config.test:
+        log_file = os.path.join(config.LOG_DIR, '{}-{}_{}.log'.format(os.path.splitext(
+            os.path.basename(__file__))[0], str_today, model_used))
+    else:
+        log_file = os.path.join(config.LOG_DIR, '{}-{}_{}_test.log'.format(os.path.splitext(
+            os.path.basename(__file__))[0], str_today, model_used))
     init_universal_logging(log_file, mode='a', to_stdout=True)
 
     train_model(config.test)
