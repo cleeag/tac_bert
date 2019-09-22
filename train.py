@@ -152,7 +152,8 @@ def train_model(test=False):
             # logging.info(
             #     'step={}/{} l={:.4f} l_v={:.4f} acc_v={:.4f} paccv={:.4f}{}\n'.format(
             #         step, n_steps, loss, l_v, acc_v, pacc_v, best_tag))
-            logging.info('step={}/{}, learning rate={}'.format(step, n_steps, optimizer.param_groups[0]['lr']))
+            logging.info('step={}/{}, learning rate={}, losses={:.4f}'
+                         .format(step, n_steps, optimizer.param_groups[0]['lr'], losses))
             logging.info('evaluation result: '
                          'l_v={:.4f} acc_v={:.4f} paccv={:.4f} acc_t={:.4f} macro_f1={:.4f} micro_f1={:.4f}{}\n'
                          .format(l_v, acc_v, pacc_v, acc_t, maf1, mif1, best_tag))
@@ -166,7 +167,7 @@ def train_model(test=False):
 
             if acc_v > best_dev_acc:
                 best_dev_acc = acc_v
-            # losses = list()
+            losses = list()
             # if config.test:
             #     input('proceed? ')
 

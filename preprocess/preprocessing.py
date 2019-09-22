@@ -253,6 +253,13 @@ def get_type_count(test=True):
             write_pair = '\t'.join(pair) + '\n'
             w.write(write_pair)
 
+def check_mention2type_dict():
+    mention2type_dict = pkl.load(file=open(join(data_dir, 'mention2type_dict.pkl'), 'rb'))
+    for k, v in mention2type_dict.items():
+        print(k)
+        print(v)
+        input('next? ')
+
 
 if __name__ == '__main__':
     # test = True
@@ -269,4 +276,5 @@ if __name__ == '__main__':
     #                             output_files_name_prefix=config.FIGER_FILES['anchor-train-data-prefix-bert'],
     #                             do_bert=True)
 
-    slim_pickles()
+    # slim_pickles()
+    check_mention2type_dict()
